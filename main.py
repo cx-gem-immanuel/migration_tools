@@ -16,9 +16,16 @@ def lookup(dictionary, key):
 def get_application_name(full_team_path):
     #   application name is leaf in team path
     #       ex. /a/b/c/app_name
-    return Path(full_team_path).name    
+    return Path(full_team_path).name
 
-ignored_teams = ['TEST']
+def is_parent(full_path, app, expected):
+    p = Path(full_path)
+    if p.name != app:
+        return False
+    # p.parent = cxserver/xy/xy, check if it ends with xy/xy
+    return str(p.parent).endswith(expected.strip('/'))
+
+ignored_teams = ['CxServer', 'TEST']
 
 # ========================================== Main Execution ==========================================
 
@@ -51,6 +58,13 @@ ast_host = config['CXONE']['ast_host']
 tenant = config['CXONE']['tenant']
 api_key = config['CXONE']['api_key']
 
+logger.debug(f"-------------------------------------------------------------")
+logger.debug(f"Project > Application > Group mapper")
+logger.debug(f"Source: {cxsast_host}")
+logger.debug(f"Target: {ast_host}")
+logger.debug(f"{'REAL EXECUTION MODE' if is_exec else 'DRY-RUN MODE'}")
+logger.debug(f"-------------------------------------------------------------")
+
 logger.debug(f"Initializing CxSAST and CxOne clients...")
 # Initialize CxSAST client
 cxsast_client = CxSastClient(cxsast_host, cxsast_username, cxsast_password, False)
@@ -75,7 +89,7 @@ logger.debug(f'Found: {len(cxsast_projects)}')
 logger.debug("Fetching LDAP groups...")
 cxsast_ldap_groups_dict = cxsast_client.get_ldap_groups_dict()
 logger.debug(f'Found: {len(cxsast_ldap_groups_dict)}')
-# for idx, group in enumerate(cxsast_ldap_groups_dict):
+#for idx, group in enumerate(cxsast_ldap_groups_dict):
 #    logger.debug(f'   {group}: {cxsast_ldap_groups_dict[group]}')
 
 # Find CxOne applications
@@ -117,21 +131,20 @@ for idx, cxsast_project in enumerate(cxsast_projects):
     full_team_path = lookup(cxsast_teams_dict, team_id)
 
     if full_team_path is None:
-        logger.warning(f"..... Skipping CxSAST project [{cxsast_project['name']}], team [{team_id}] not found")
+        logger.warning(f"...Skipping CxSAST project [{cxsast_project['name']}], team [id: {team_id}] not found")
         continue
 
     cxsast_project_name = cxsast_project['name']
-    #logger.debug(f"{idx+1}. Processing CxSAST project [{cxsast_project_name}], team: [{team_id}, {full_team_path}]")
-
+    
     # Lookup CxOne project id by name
     #   CxOne project name is the same as CxSAST project name
     cxone_project_id = lookup(cxone_projects_dict, cxsast_project_name)
     
     if cxone_project_id is None:
-        #logger.warning(f"..... Skipping. CxSAST project [{cxsast_project_name}] was not found on CxOne.")
+        logger.warning(f"...Skipping. CxSAST project [{cxsast_project_name}] was not found on CxOne.")
         continue
     
-    logger.debug(f"Processing [{cxsast_project_name}, id: {cxone_project_id}]")
+    logger.debug(f"Processing CxSAST project [{cxsast_project_name}], team: [{team_id}, {full_team_path}], CxOne project id [{cxone_project_id}]")
 
     # ---------------------------------------------
     # Create the CxOne Application
@@ -140,10 +153,12 @@ for idx, cxsast_project in enumerate(cxsast_projects):
     # Determine CxOne application name from team path
     application_id = None
     application_name = get_application_name(full_team_path) 
+
     # Skip ignored teams
     if application_name in ignored_teams:
-        logger.debug(f"Skipping CxOne Team [{application_name}]")
+        logger.debug(f"Skipping CxSAST project [{cxsast_project_name}] in team [{full_team_path}] (explicitly skipped)")
         continue
+
     logger.debug(f"Application Name [{application_name}]. Generated from CxSAST team [{full_team_path}]")
     application_id = lookup(cxone_applications_dict, application_name)
     if application_id is None:
@@ -169,6 +184,10 @@ for idx, cxsast_project in enumerate(cxsast_projects):
     #   CxOne Group Name which is the same as the CxSAST LDAP Group Name
     #   CxOne Group ID, which we can lookup by name
     group_name = lookup(cxsast_ldap_groups_dict, team_id)
+    if group_name is None:
+        logger.warning(f"WARNING: No CxOne group was found that corresponds to LDAP group for CxSAST team [id:{team_id}, {full_team_path}]. Cannot authorize application [{application_name}].")
+        continue
+
     # Find the group id by name
     group_id = lookup(cxone_groups_dict, group_name)
     if group_id is None:

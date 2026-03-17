@@ -116,14 +116,10 @@ class CxSastClient:
             if team['fullname'] == team_name:
                 team_id = team['id']
                 self._teams_cache[team_name] = team_id
-                logger.debug(f'Team ID for [{team_name}]: {team_id}')             
                 break
         return team_id
 
     def get_ldap_groups_dict(self):
-
-        # Mock LDAP groups 
-        return {288 : 'Example Group'}
 
         # Ensure bearer token is available
         self.bearer_token = self.get_bearer_token()
@@ -152,12 +148,18 @@ class CxSastClient:
             #     "ldapServerId": 0
             #   }
             # ]
+            
+            # Fetch the common name from given LDAP distinguished name
+            def cn(dn):
+                match = re.match(r'CN=([^,]+)', dn, re.IGNORECASE)
+                return match.group(1) if match else None
+
             # Create a dictionary of teamId to ldapGroupDisplaName
             #   ex. {teamId: ldapGroupDisplayName}
-            
-            print(f"{response.json()}")
             for ldap_group in response.json():
-                ldap_groups_dict[ldap_group['teamId']] = ldap_group['ldapGroupDisplayName']                
+                dn = ldap_group['ldapGroupDn']
+                cxone_group = cn(dn)
+                ldap_groups_dict[ldap_group['teamId']] = cxone_group
             return ldap_groups_dict
         else:
             logger.debug(f'Error: {response.status_code} - {response.text}')
@@ -302,11 +304,10 @@ class CxOneClient:
                     projects.extend(projectsJson)
                     for p in projectsJson:
                         projects_dict[p['name']] = p['id']
-                    # logger.debug(f'Added {len(projectsJson)} projects to list.')
                 remaining = nProjectsInOrg - len(projects)
                 offset += limit
             else:                
-                logger.debug(f'Reason: ${response.reason}')
+                logger.debug(f'Could not fetch projects. Reason: ${response.reason}')
                 break
             
         return projects_dict
@@ -323,7 +324,6 @@ class CxOneClient:
         Returns:
             str: The ID of the created application.
         """
-        logger.debug("Real execution of create_application called.")
         self.bearer_token = self.get_bearer_token()
         url = f'{self.ast_host}/api/applications'
         headers = {
@@ -532,7 +532,6 @@ class CxOneClient:
         Returns:
             bool: True if the update is successful, False otherwise.
         """
-        logger.debug("Real execution of update_project_tag called.")
         # Ensure bearer token is available
         self.bearer_token = self.get_bearer_token()
         # Construct the URL and headers for project update
