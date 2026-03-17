@@ -559,4 +559,42 @@ class CxOneClient:
             logger.debug(f'Error updating tags for project {project_id}: {response.status_code} - {response.text}')
             return False    
         
-   
+    def delete_project(self, project_id):
+        # Ensure bearer token is available
+        self.bearer_token = self.get_bearer_token()
+        # Construct the URL and headers for project deletion
+        url = f'{self.ast_host}/api/projects/{project_id}'
+        headers = {  
+            'accept': 'application/json; version=1.0',
+            'Authorization': f'Bearer {self.bearer_token}'
+        }
+        # Send DELETE request to delete the project
+        response = requests.delete(url, headers=headers)
+        # If successful, return True
+        if response.status_code == 204:
+            logger.debug(f"Successfully deleted project {project_id}")
+            return True
+        else:
+            # Print error if request failed
+            logger.debug(f'Error deleting project {project_id}: {response.status_code} - {response.text}')
+            return False
+    
+    def delete_application (self, application_id):
+        # Ensure bearer token is available
+        self.bearer_token = self.get_bearer_token()
+        # Construct the URL and headers for application deletion
+        url = f'{self.ast_host}/api/applications/{application_id}'
+        headers = {  
+            'accept': 'application/json; version=1.0',
+            'Authorization': f'Bearer {self.bearer_token}'
+        }
+        # Send DELETE request to delete the application
+        response = requests.delete(url, headers=headers)
+        # If successful, return True
+        if response.status_code == 204:
+            logger.debug(f"Successfully deleted application {application_id}")
+            return True
+        else:
+            # Print error if request failed
+            logger.debug(f'Error deleting application {application_id}: {response.status_code} - {response.text}')
+            return False
