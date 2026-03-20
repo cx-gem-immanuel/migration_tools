@@ -30,7 +30,7 @@ class CxSastClient:
             'username': self.username,
             'password': self.password,
             'grant_type': 'password',
-            'scope': 'sast_rest_api',
+            'scope': 'sast_rest_api access_control_api',
             'client_id': 'resource_owner_client',
             'client_secret': '014DF517-39D1-4453-B7B3-9930C563627C'
         }
