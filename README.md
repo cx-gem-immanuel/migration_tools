@@ -1,5 +1,9 @@
 # Custom Tools for CxSAST to CxOne Migration
 
+**Note**: All scripts run in Dry-Run mode by default.
+
+An explicit --exec parameter must be supplied for real execution.
+
 ## CxOne Projects and Applications Cleanup/Deletion 
 Deletes Projects and Applications from configured CxOne tenant. 
 
