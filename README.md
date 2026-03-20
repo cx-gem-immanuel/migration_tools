@@ -139,12 +139,12 @@ options:
 ## Project => Application Mapping and Application => Group Authorization Automation
 Automatically maps CxOne Projects to computed Applications (creating them if needed) and Authorizing them to computed Groups.
 
-The CxSAST team (leaf part) is computed as the Application Name. 
+The CxOne Application Name is computed from the leaf element of the CxSAST team path. 
 Ex. CxServer/Some/Path/BuildTools => CxOne Application "BuildTools"
 All projects that belong to a given team, will be associated to the computed Application.
 
-The LDAP CN of the DN used to map to a CxSAST team is computed as the CxOne Group Name.
-Ex. CxServer/Some/Path/BuildTools <= CN=EliteGroup,OU=Groups,OU=IT,DC=example,DC=com
+The CxOne Group Name is computed from the CN of the LDAP DN mapped to a CxSAST team.
+Ex. CN=EliteGroup,OU=Groups,OU=IT,DC=example,DC=com is mapped to CxServer/Some/Path/BuildTools 
 "EliteGroup" (CN part of the LDAP DN) will be used as the CxOne Group Name.
 
 **Example Mapping and Authorization**
