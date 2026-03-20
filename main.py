@@ -59,7 +59,7 @@ tenant = config['CXONE']['tenant']
 api_key = config['CXONE']['api_key']
 
 logger.debug(f"-------------------------------------------------------------")
-logger.debug(f"Project > Application > Group mapper")
+logger.debug(f"Project > Application > Group mapping and Authorization")
 logger.debug(f"Source: {cxsast_host}")
 logger.debug(f"Target: {ast_host}")
 logger.debug(f"{'REAL EXECUTION MODE' if is_exec else 'DRY-RUN MODE'}")
@@ -75,15 +75,19 @@ cxone_client = CxOneClient(iam_host, ast_host, tenant, api_key, False)
 logger.debug("Fetching CxSAST teams...")
 cxsast_teams_dict =  cxsast_client.get_teams_dict()
 logger.debug(f'Found: {len(cxsast_teams_dict)}')
-# for idx, team in enumerate(cxsast_teams_dict):
-#    logger.debug(f'   {team}: {cxsast_teams_dict[team]}')
+#for idx, team in enumerate(cxsast_teams_dict):
+#   if idx == 10:
+#       break
+#   logger.debug(f'   {team}: {cxsast_teams_dict[team]}')
 
 # Find CxSAST projects
 logger.debug("Fetching CxSAST projects...")
 cxsast_projects = cxsast_client.get_projects()
 logger.debug(f'Found: {len(cxsast_projects)}')
-# for idx, project in enumerate(cxsast_projects):
-#    logger.debug(f'   {project["name"]}: {project["teamId"]}')
+#for idx, project in enumerate(cxsast_projects):
+#   if idx == 10:
+#       break
+#   logger.debug(f'   {project["name"]}: {project["teamId"]}')
 
 # Find CxSAST LDAP groups
 logger.debug("Fetching LDAP groups...")
@@ -96,29 +100,31 @@ logger.debug(f'Found: {len(cxsast_ldap_groups_dict)}')
 logger.debug("Fetching CxOne Applications...")
 cxone_applications_dict = cxone_client.get_applications_dict()
 logger.debug(f'Found: {len(cxone_applications_dict)}')
-# for idx, app in enumerate(cxone_applications_dict):
+#for idx, app in enumerate(cxone_applications_dict):
 #    logger.debug(f'   {app}: {cxone_applications_dict[app]}')
 
 # Find CxOne projects
 logger.debug("Fetching CxOne projects...")
 cxone_projects_dict = cxone_client.get_projects_dict()
 logger.debug(f'Found: {len(cxone_projects_dict)}')
-# for idx, project in enumerate(cxone_projects_dict):
+#for idx, project in enumerate(cxone_projects_dict):
 #    logger.debug(f'   {project}: {cxone_projects_dict[project]}')
 
 # Find CxOne groups
 logger.debug("Fetching CxOne groups...")
 cxone_groups_dict = cxone_client.get_groups_dict()
 logger.debug(f'Found: {len(cxone_groups_dict)}')
-# for idx, group in enumerate(cxone_groups_dict):
+#for idx, group in enumerate(cxone_groups_dict):
 #    logger.debug(f'   {group}: {cxone_groups_dict[group]}')
-
 
 logger.debug(f'--------------------------------------------')
 
 n_apps_created = 0
 n_projects_mapped = 0
 n_applications_authorized = 0
+n_bad_teams = 0
+n_project_not_in_cxone = 0
+n_ignored_project = 0
 
 # For each CxSAST project,
 #    Create application from team path's leaf element, if it doesn't exist
@@ -131,7 +137,8 @@ for idx, cxsast_project in enumerate(cxsast_projects):
     full_team_path = lookup(cxsast_teams_dict, team_id)
 
     if full_team_path is None:
-        logger.warning(f"...Skipping CxSAST project [{cxsast_project['name']}], team [id: {team_id}] not found")
+        logger.debug(f"...Skipping CxSAST project [{cxsast_project['name']}], team [id: {team_id}] not found")
+        n_bad_teams += 1
         continue
 
     cxsast_project_name = cxsast_project['name']
@@ -141,7 +148,8 @@ for idx, cxsast_project in enumerate(cxsast_projects):
     cxone_project_id = lookup(cxone_projects_dict, cxsast_project_name)
     
     if cxone_project_id is None:
-        logger.warning(f"...Skipping. CxSAST project [{cxsast_project_name}] was not found on CxOne.")
+        logger.debug(f"...Skipping. CxSAST project [{cxsast_project_name}] was not found on CxOne.")
+        n_project_not_in_cxone += 1
         continue
     
     logger.debug(f"Processing CxSAST project [{cxsast_project_name}], team: [{team_id}, {full_team_path}], CxOne project id [{cxone_project_id}]")
@@ -156,10 +164,11 @@ for idx, cxsast_project in enumerate(cxsast_projects):
 
     # Skip ignored teams
     if application_name in ignored_teams:
-        logger.debug(f"Skipping CxSAST project [{cxsast_project_name}] in team [{full_team_path}] (explicitly skipped)")
+        logger.debug(f"...Skipping CxSAST project [{cxsast_project_name}] in team [{full_team_path}] (explicitly asked to skip)")
+        n_ignored_project += 1
         continue
 
-    logger.debug(f"Application Name [{application_name}]. Generated from CxSAST team [{full_team_path}]")
+    # logger.debug(f"Application Name [{application_name}]. Generated from CxSAST team [{full_team_path}]")
     application_id = lookup(cxone_applications_dict, application_name)
     if application_id is None:
         logger.debug(f"Creating CxOne Application [{application_name}]")
@@ -190,12 +199,13 @@ for idx, cxsast_project in enumerate(cxsast_projects):
 
     # Find the group id by name
     group_id = lookup(cxone_groups_dict, group_name)
-    if group_id is None:
-        logger.warning(f"WARNING: CxOne group [{group_name}] was not found. Cannot authorize application [{application_name}] to group.")        
-        continue    
-    if application_id is None:
-        logger.warning(f"WARNING: CxOne application [id: {application_id}] was not found. Cannot authorize application [{application_name}] to group.")        
-        continue    
+    if is_exec:
+        if group_id is None:
+            logger.warning(f"WARNING: CxOne group [{group_name}] was not found. Cannot authorize application [{application_name}] to group.")        
+            continue    
+        if application_id is None:
+            logger.warning(f"WARNING: CxOne application [id: {application_id}] was not found. Cannot authorize application [{application_name}] to group.")        
+            continue    
     # Authorize application to group
     if is_exec:
         is_auth = cxone_client.is_authorized(application_id, group_id)
@@ -212,8 +222,16 @@ for idx, cxsast_project in enumerate(cxsast_projects):
                 logger.debug(f"Authorized application [{application_name}] for group [{group_name}]")
             else:
                 logger.warning(f"WARNING: Could not authorize application [id:{application_id}, {application_name}] to group [id:{group_id}, {group_name}]")    
+    else:
+        logger.debug(f"Authorized application [{application_name}] for group [{group_name}]")
+        n_applications_authorized += 1
 
 
+logger.debug(f'--------------------------------------------')
+logger.debug(f"Summary:")
+logger.debug(f"Skipped {n_bad_teams} projects with invalid team id.")
+logger.debug(f"Skipped {n_project_not_in_cxone} projects not found in CxOne.")
+logger.debug(f"Skipped {n_ignored_project} projects in ignored teams (ex. Test).")
 logger.debug(f"Created {n_apps_created} applications.")
 logger.debug(f"Associated {n_projects_mapped} projects to applications.")
 logger.debug(f"Authorized {n_applications_authorized} applications.")

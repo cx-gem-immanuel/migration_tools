@@ -154,8 +154,8 @@ class CxSastClient:
                 match = re.match(r'CN=([^,]+)', dn, re.IGNORECASE)
                 return match.group(1) if match else None
 
-            # Create a dictionary of teamId to ldapGroupDisplaName
-            #   ex. {teamId: ldapGroupDisplayName}
+            # Create a dictionary of teamId to commonName
+            #   ex. {teamId: commonName}
             for ldap_group in response.json():
                 dn = ldap_group['ldapGroupDn']
                 cxone_group = cn(dn)
@@ -246,6 +246,9 @@ class CxOneClient:
             list: A list of group dictionaries if the request is successful (status code 200).
                   Returns None if the request fails.
         """
+        # Ensure bearer token is available
+        self.bearer_token = self.get_bearer_token()
+        
         url = f'{self.iam_host}/auth/admin/realms/{self.tenant}/groups'
         headers = {
             'Authorization': f'Bearer {self.bearer_token}',
@@ -342,7 +345,6 @@ class CxOneClient:
         if response.status_code == 201:
             jsonResp = response.json()
             application_id = jsonResp['id']
-            logger.debug(f"Successfully created application {application_name} with ID {application_id}")
             return application_id
         else:
             logger.debug(f'Error creating application {application_name}: {response.status_code} - {response.text}')
@@ -458,52 +460,85 @@ class CxOneClient:
             logger.debug(f'Error retrieving applications: {response.status_code} - {response.text}')
 
         return applications_dict
-
-    def get_groups(self):
-        # curl --request GET \
-        #--url https://ast.checkmarx.net/api/access-management/groups \
-        #--header 'Accept: application/json'
-        # 
-        # Query parameters:
-        # limit: The maximum number of results to return (Default: 10)
-        # 
-        # offset: The number of pages to skip before starting to return results. The number of results per page is defined by the value of limit.
+    
+    def get_groups(self, group_name=None):
         """
-        Retrieves the list of groups from the AST system.
+        Retrieve groups from the IAM server.
+        
+        Fetches a list of groups from the configured IAM host for the current tenant.
+        Optionally filters the results by group name.
+        
+        Args:
+            group_name (str, optional): The name of a specific group to retrieve. 
+                                        If provided, only groups matching this name 
+                                        will be returned. Defaults to None.
+        
         Returns:
-
-            list: A list of groups if the request is successful.
-            None: If the request fails, prints the error and returns None.  
+            list: A list of group dictionaries if the request is successful (status code 200).
+                  Returns None if the request fails.
         """
-        limit = 10
-        offset = 0
-        all_groups = []
         # Ensure bearer token is available
         self.bearer_token = self.get_bearer_token()
-        while True:
-            # Construct the URL and headers for group retrieval
-            url = f'{self.ast_host}/api/access-management/groups?limit={limit}&offset={offset}'
-            headers = {  
-                'accept': 'application/json; version=1.0',
-                'Authorization': f'Bearer {self.bearer_token}'
-            }
-            # Send GET request to retrieve groups
-            response = requests.get(url, headers=headers)
-            # If successful, process the list of groups
-            if response.status_code == 200:
-                response_json = response.json()
-                groups = response_json
-                all_groups.extend(groups)
-                #print(all_groups)
-                #exit(0)
-                if len(groups) < limit:
-                    break
-                offset += limit
-            else:
-                # Print error if request failed
-                logger.debug(f'Error retrieving groups: {response.status_code} - {response.text}')
-                return None
-        return all_groups
+        url = f'{self.iam_host}/auth/admin/realms/{self.tenant}/groups'
+        headers = {
+            'Authorization': f'Bearer {self.bearer_token}',
+            'Content-Type': 'application/json'  
+        }
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            groups = response.json()
+            if group_name:
+                groups = [group for group in groups if group['name'] == group_name]
+            return groups
+        else:
+            logger.debug(f'Error: {response.status_code} - {response.text}')
+            return None
+        
+    # def get_groups(self):
+    #     # curl --request GET \
+    #     #--url https://ast.checkmarx.net/api/access-management/groups \
+    #     #--header 'Accept: application/json'
+    #     # 
+    #     # Query parameters:
+    #     # limit: The maximum number of results to return (Default: 10)
+    #     # 
+    #     # offset: The number of pages to skip before starting to return results. The number of results per page is defined by the value of limit.
+    #     """
+    #     Retrieves the list of groups from the AST system.
+    #     Returns:
+
+    #         list: A list of groups if the request is successful.
+    #         None: If the request fails, prints the error and returns None.  
+    #     """
+    #     limit = 10
+    #     offset = 0
+    #     all_groups = []
+    #     # Ensure bearer token is available
+    #     self.bearer_token = self.get_bearer_token()
+    #     while True:
+    #         # Construct the URL and headers for group retrieval
+    #         url = f'{self.ast_host}/api/access-management/groups?limit={limit}&offset={offset}'
+    #         headers = {  
+    #             'accept': 'application/json; version=1.0',
+    #             'Authorization': f'Bearer {self.bearer_token}'
+    #         }
+    #         # Send GET request to retrieve groups
+    #         response = requests.get(url, headers=headers)
+    #         # If successful, process the list of groups
+    #         if response.status_code == 200:
+    #             response_json = response.json()
+    #             groups = response_json
+    #             all_groups.extend(groups)
+    #             #print(all_groups)
+    #             #exit(0)
+    #             if len(groups) < limit:
+    #                 break
+    #             offset += limit
+    #         else:
+    #             # Print error if request failed
+    #             logger.debug(f'Error retrieving groups: {response.status_code} - {response.text}')
+    #             return None
+    #     return all_groups
             
     def update_project_tags(self, project_id, tags_list):
         # curl --request PATCH \
@@ -598,3 +633,174 @@ class CxOneClient:
             # Print error if request failed
             logger.debug(f'Error deleting application {application_id}: {response.status_code} - {response.text}')
             return False
+    
+    def create_group(self, group_name):
+        """
+        Creates a new group in the IAM system with the specified name.
+            bool: True if the group is created successfully (HTTP 201 response).
+                  False if the request fails.
+        """
+        url = f'{self.iam_host}/auth/admin/realms/{self.tenant}/groups'
+        headers = { 
+            'Authorization': f'Bearer {self.get_bearer_token()}',
+            'Content-Type': 'application/json'
+        }
+        data = {
+            "name": group_name            
+        }
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 201:
+            return True
+        else:
+            logger.debug(f'Error: {response.status_code} - {response.text}')
+            return False
+    
+    def delete_roles_in_group(self, group_id, client_id):
+        """
+        Delete all role mappings for a specific client within a group.
+        Args:
+            group_id (str): The unique identifier of the group.
+            client_id (str): The unique identifier of the client whose roles should be removed from the group.
+        Returns:
+            bool: True if the role mappings were successfully deleted (HTTP 204 response),
+                  False otherwise. On failure, error details are logged at debug level.
+        Raises:
+            None: Exceptions from the requests library are not explicitly raised or handled.
+        """
+
+        url = f'{self.iam_host}/auth/admin/realms/{self.tenant}/groups/{group_id}/role-mappings/clients/{client_id}'
+        headers = {
+            'Authorization': f'Bearer {self.get_bearer_token()}',
+            'Content-Type': 'application/json'
+        }
+
+        response = requests.delete(url, headers=headers)
+        if response.status_code == 204:
+            return True
+        else:
+            logger.debug(f'Error: {response.status_code} - {response.text}')
+            return False
+            
+    def assign_roles_to_group(self, group_id, client_id, roles):
+        """
+        Assign roles to a group in the IAM system.
+        This method sends a POST request to assign the specified roles to a group
+        for a particular client in the IAM realm.
+        Args:
+            group_id (str): The unique identifier of the group to assign roles to.
+            client_id (str): The unique identifier of the client for which roles are being assigned.
+            roles (list): A list of role dictionaries, each containing:
+                - id (str): The unique identifier of the role.
+                - name (str): The name of the role.
+        Returns:
+            bool: True if roles were successfully assigned (HTTP 204 response),
+                  False otherwise.
+        """
+
+        url = f'{self.iam_host}/auth/admin/realms/{self.tenant}/groups/{group_id}/role-mappings/clients/{client_id}'
+        headers = {
+            'Authorization': f'Bearer {self.get_bearer_token()}',
+            'Content-Type': 'application/json'
+        }
+
+        # Payload format for assigning roles to group is a list of role objects with id and name, e.g.
+        # [
+        #     {"id":"002620a4-b0ea-404e-8394-096077c770e4","name":"ast-viewer"},
+        #     {"id":"b628cbfc-86de-45d4-8a2a-7affcd8cc5c0","name":"ast-admin"}
+        # ]
+        data = []
+        for role in roles:
+            data.append({
+                "id": role['id'],
+                "name": role['name']
+            })
+            
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 204:
+            return True
+        else:
+            logger.debug(f'Error: {response.status_code} - {response.text}')
+            return False
+
+    def get_roles(self, client_id):
+        """
+        Retrieves all roles associated with a specific client in the IAM realm.
+        
+        Args:
+            client_id (str): The unique identifier of the client for which to retrieve roles.
+        
+        Returns:
+            dict or None: A dictionary containing the list of roles for the client if the request
+                          is successful (HTTP 200), or None if the request fails. The response
+                          contains role details from the IAM server.
+        """
+        # GET https://{{IAM_HOST}}/auth/admin/realms/{{TENANT}}/clients/{{client_id}}/roles
+        url = f'{self.iam_host}/auth/admin/realms/{self.tenant}/clients/{client_id}/roles'
+        headers = {
+            'Authorization': f'Bearer {self.get_bearer_token()}',
+            'Content-Type': 'application/json'
+        }
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.debug(f'Error: {response.status_code} - {response.text}')
+            return None
+    
+    def get_role_id(self, client_id, role_name):
+        """
+        Retrieve the ID of a role by its name for a given client.
+
+        Args:
+            client_id: The identifier of the client.
+            role_name (str): The name of the role to search for.
+
+        Returns:
+            str or None: The ID of the role if found, otherwise None.
+        """
+        roles = self.get_roles(client_id)
+        for role in roles:
+            if role['name'] == role_name:
+                return role['id']
+        return None 
+
+    def get_client_id(self, client_name):
+        """
+        Retrieve the internal ID of a client by their identifier string.
+        
+        Args:
+            client_name (str): The client ID to search for.
+        
+        Returns:
+            str or None: The internal ID of the client if found, None otherwise.        
+        """
+        clients = self.get_clients()
+        for client in clients:
+            if client['clientId'] == client_name:
+                return client['id']
+        return None
+    
+    def get_clients(self):
+        """
+        Retrieve a list of clients from the IAM realm.
+        
+        Sends an authenticated GET request to the IAM admin API endpoint to fetch
+        all clients configured in the current tenant's realm.
+        
+        Returns:
+            list[dict] | None: A list of client dictionaries containing client configuration details
+                if the request is successful (HTTP 200), otherwise None if the request fails.        
+        """
+        # https://{{cx_iam_host}}/auth/admin/realms/{{cx_tenant}}/clients
+        url = f'{self.iam_host}/auth/admin/realms/{self.tenant}/clients'
+        headers = {
+            'Authorization': f'Bearer {self.get_bearer_token()}',
+            'Content-Type': 'application/json'
+        }
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.debug(f'Error: {response.status_code} - {response.text}')
+            return None
+        
