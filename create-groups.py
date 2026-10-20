@@ -89,7 +89,7 @@ rolenames_to_assign = [role["name"] for role in roles_to_assign]
 n_groups_created = 0
 n_groups_existing = 0
 cxone_groups_dict = cxone_client.get_groups_dict()
-for cxone_group in cxsast_ldap_groups_dict.values():
+for cxone_group in set(cxsast_ldap_groups_dict.values()):
         
     # Create desired group if it doesn't exist
     if cxone_group in cxone_groups_dict.keys():
